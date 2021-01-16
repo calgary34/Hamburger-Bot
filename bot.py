@@ -3,10 +3,30 @@ import discord
 import random
 import os
 import economy
+import bot_data
+
 import json
+
 from keep_alive import keep_alive
 client = commands.Bot(command_prefix=";")
 client.remove_command("help")
+@client.event
+async def on_command_error(ctx, error):
+	if isinstance(error, commands.CommandNotFound):
+		em = discord.Embed(title="Invalid Command", description=f"{str(error)}. Try `;help` for a list of commands.", color=0x275ef4)
+		await ctx.send(embed=em)
+def create_account(id):    
+    bank=economy.get_data()
+    have_id = str(id) in bank
+    if not have_id:
+        print('Account created with id '+str(id))
+        economy.save({
+            "user": str(id),
+            "wallet": 0,
+            "bank": 0,
+            "job": None,
+        })
+
 
 def create_account(id):
     id = str(id)
@@ -113,6 +133,18 @@ async def eightball(ctx, *, question):
         f'Your question: {question}\n8ball says: {random.choice(answers)}\n:8ball::8ball::8ball::8ball::8ball:',
         color=0x275ef4)
     await ctx.send(embed=em)
+
+@eightball.error
+async def eightball_error(ctx, error):
+  if isinstance(error, commands.MissingRequiredArgument):
+    em = discord.Embed(
+        title="8ball",
+        description=
+        'You better give me a question to answer \n:8ball::8ball::8ball::8ball::8ball:',
+        color=0x275ef4)
+    await ctx.send(embed=em)
+
+
 
 
 @client.group(invoke_without_command=True)
@@ -226,6 +258,27 @@ async def help_dice(ctx):
 
 
 @client.command(aliases=["dices"])
+
+async def dice(ctx, num=1):
+	try:
+		num = int(num)
+		for i in range(num):
+			roll = random.randint(1, 6)
+			await ctx.send(ctx.author.mention)
+			await ctx.send(file=discord.File(f'images/dice{roll}.png'))
+	except ValueError:
+		await ctx.send("Invalid Number!")
+
+
+@client.command(aliases=['account','p','pro','prof'])
+async def profile(ctx, user: discord.Member):
+    create_account(user.id)
+    em = discord.Embed(title=f"{user.name}'s Profile", description=f"{user.mention}'s Game Stats:", color=0x275ef4)
+    bank=economy.get_data()
+    em.add_field(name="Wallet", value=bank[str(user.id)]['wallet'],inline=False)
+    em.add_field(name="Hamburger Bank", value=bank[str(user.id)]['bank'],inline=False)
+    em.add_field(name="Job", value=bank[str(user.id)]['job'],inline=False)
+@client.command(aliases=['dice'])
 async def dice(ctx, num="1"):
     try:
         num = int(num)
@@ -259,11 +312,44 @@ async def profile(ctx, user: discord.Member):
     em.add_field(name="Wallet", value=bank[str(user.id)]['wallet'])
     em.add_field(name="Hamburger Bank", value=f"{bank[str(user.id)]['bank']}")
     em.add_field(name="Job", value=bank[str(user.id)]['job'])
+
     em.set_thumbnail(url=user.avatar_url)
     await ctx.send(embed=em)
 @profile.error
 async def profile_error(ctx, error):
   if isinstance(error, commands.MissingRequiredArgument):
+
+    create_account(ctx.author.id)
+    em = discord.Embed(title=f"{ctx.author.name}'s Profile", description=f"{ctx.author.mention}'s Game Stats:", color=0x275ef4)
+    bank=economy.get_data()
+    em.add_field(name="Wallet", value=bank[str(ctx.author.id)]['wallet'],inline=False)
+    em.add_field(name="Hamburger Bank", value=bank[str(ctx.author.id)]['bank'],inline=False)
+    em.add_field(name="Job", value=bank[str(ctx.author.id)]['job'],inline=False)
+    em.set_thumbnail(url=ctx.author.avatar_url)
+    await ctx.send(embed=em)
+@client.group(invoke_without_command=True,name='work',aliases=['job'])
+async def work(ctx):
+  try:
+    x=economy.work(ctx.author.id)
+  except Exception as e:
+    print(type(e))
+    print(e)
+  await ctx.send(f"You went to work and your boss paid you {str(x)} dollars.")
+@work.command(name='apply')
+async def work_apply(ctx,job):
+  create_account(ctx.author.id)
+  try:
+    economy.applyjob(economy.getAccount(ctx.author.id),job)
+    em = discord.Embed(title=f"{ctx.author.name} has successfully applied for a job!", description=f"{ctx.author.mention} You now work as a {job}!", color=0x275ef4)
+    await ctx.send(embed=em)
+  except economy.EconomyError:
+    await ctx.send("What are you thinking that's not a job from the list (check the list by typing `;work list`)")
+@work.command(name='list')
+async def work_list(ctx):
+  em=discord.Embed(title="Job list",description="A list of job you can apply to", color=0x275ef4)
+  for job in bot_data.jobs:
+    em.add_field(name=job,value=f"Money per work: "+str(bot_data.job_data[job]),inline=False)
+
     em = discord.Embed(title=f"{ctx.author.name}'s Profile", description=f"{ctx.author.mention}'s Game Stats:", color=0x275ef4)
     with open("economy.json") as f:
         bank = json.load(f)
@@ -277,7 +363,9 @@ async def applyjob(ctx,job):
   e=economy.getAccount(ctx.author.id)
   e.applyjob(job)
   em = discord.Embed(title=f"{ctx.author.name} has successfully applied for a job!", description=f"{ctx.author.mention} You now work as a {job}!", color=0x275ef4)
+
   await ctx.send(embed=em)
 keep_alive()
 # Run The Bot
 client.run(os.getenv("DISCORD_BOT_SECRET"))
+

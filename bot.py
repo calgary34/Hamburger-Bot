@@ -4,12 +4,18 @@ import random
 import os
 import economy
 import bot_data
-
+import requests
 import json
-
+from urllib.request import *
+from bs4 import BeautifulSoup
+from parse import *
 from keep_alive import keep_alive
 client = commands.Bot(command_prefix=";")
 client.remove_command("help")
+@client.event
+async def on_message(message):
+    if client.user.mentioned_in(message):
+        await message.channel.send("The prefix is ';'")
 @client.event
 async def on_command_error(ctx, error):
 	if isinstance(error, commands.CommandNotFound):
@@ -26,20 +32,17 @@ def create_account(id):
             "bank": 0,
             "job": None,
         })
+def get_stock_price(stocksymbol):
+  quote_page = 'https://ca.finance.yahoo.com/quote/'+stocksymbol.upper()
+  page = urlopen(quote_page)
+  soup = BeautifulSoup(page, 'html.parser')
+  price_box = soup.find('span', attrs={'class': 'Trsdu(0.3s) Fw(b) Fz(36px) Mb(-4px) D(ib)'})
+  if price_box.text ==None:
+    raise Exception("That's not a valid stock symbol")
+  else:
+    price = str(price_box.text)
+    return price
 
-
-def create_account(id):
-    id = str(id)
-    with open("economy.json") as f:
-        bank = json.load(f)
-    have_id = id in bank
-    if not have_id:
-        economy.save({
-            "user": id,
-            "wallet": 0,
-            "bank": 0,
-            "job": None,
-        })
 
 
 @client.event
@@ -91,7 +94,7 @@ async def random_shuffle(ctx, *args):
     printedlist = ''
     for r in arr:
         printedlist = printedlist + str(r) + '\n'
-        answer = f'Your randomly reoganized list now looks like this:\n' + printedlist
+        answer = 'Your randomly reoganized list now looks like this:\n' + printedlist
     em = discord.Embed(
         title="Shuffled List", description=answer, color=0x275ef4)
     await ctx.send(embed=em)
@@ -100,7 +103,7 @@ async def random_shuffle(ctx, *args):
 @client.command(name='random_choice', aliases=['random-choice'])
 async def random_choice(ctx, *args):
     x = random.choice(args)
-    answer = f'Your randomly chosen item now is:\n' + x
+    answer = 'Your randomly chosen item now is:\n' + x
     em = discord.Embed(
         title="Random Choice from list", description=answer, color=0x275ef4)
     await ctx.send(embed=em)
@@ -155,9 +158,9 @@ async def help(ctx):
         "Hamburger Bot - Help Command. You can use `;help <command>` for information on a certain command. `;info` also gives you information on the bot. Remember to use `;` before each command!",
         color=0x275ef4)
     em.add_field(
-        name="Random Commands",
+        name="Commands",
         value=
-        "`random-integer`, `random-float`, `random-letter`, `random-shuffle`, `random-choice`, `8ball`,`dice`"
+        "`random-integer`, `random-float`, `random-letter`, `random-shuffle`, `random-choice`, `8ball`, `dice`, `stockprice`, `serverinfo`",inline=False
     )
     await ctx.send(embed=em)
 
@@ -171,10 +174,10 @@ class HelpCommand:
         self.aliases = aliases
         self.usage = usage
         self.em = discord.Embed(
-            title=self.title, description=self.desc, color=self.color)
-        self.em.add_field(name="Description", value=desc)
-        self.em.add_field(name="Usage", value=usage)
-        self.em.add_field(name='Aliases', value=aliases)
+            title=self.title, description=self.title, color=self.color)
+        self.em.add_field(name="Description", value=desc,inline=False)
+        self.em.add_field(name="Usage", value=usage,inline=False)
+        self.em.add_field(name='Aliases', value=aliases,inline=False)
 
 
 @help.command(
@@ -278,43 +281,7 @@ async def profile(ctx, user: discord.Member):
     em.add_field(name="Wallet", value=bank[str(user.id)]['wallet'],inline=False)
     em.add_field(name="Hamburger Bank", value=bank[str(user.id)]['bank'],inline=False)
     em.add_field(name="Job", value=bank[str(user.id)]['job'],inline=False)
-@client.command(aliases=['dice'])
-async def dice(ctx, num="1"):
-    try:
-        num = int(num)
-        for i in range(num):
-            roll = random.randint(1, 6)
-            if roll == 1:
-                await ctx.send(file=discord.File('images/dice1.png'))
-            if roll == 2:
-                await ctx.send(file=discord.File('images/dice2.png'))
-            if roll == 3:
-                await ctx.send(file=discord.File('images/dice3.png'))
-            if roll == 4:
-                await ctx.send(file=discord.File('images/dice4.png'))
-            if roll == 5:
-                await ctx.send(file=discord.File('images/dice5.png'))
-            if roll == 6:
-                await ctx.send(file=discord.File('images/dice5.png'))
-    except ValueError:
-        await ctx.send("Invalid Number!")
 
-
-@client.command(aliases=['account'])
-async def profile(ctx, user: discord.Member):
-    create_account(user.id)
-    em = discord.Embed(
-        title=f"{user.name}'s Profile",
-        description=f"{user.mention}'s Game Stats:",
-        color=0x275ef4)
-    with open("economy.json") as f:
-        bank = json.load(f)
-    em.add_field(name="Wallet", value=bank[str(user.id)]['wallet'])
-    em.add_field(name="Hamburger Bank", value=f"{bank[str(user.id)]['bank']}")
-    em.add_field(name="Job", value=bank[str(user.id)]['job'])
-
-    em.set_thumbnail(url=user.avatar_url)
-    await ctx.send(embed=em)
 @profile.error
 async def profile_error(ctx, error):
   if isinstance(error, commands.MissingRequiredArgument):
@@ -337,18 +304,24 @@ async def work(ctx):
   await ctx.send(f"You went to work and your boss paid you {str(x)} dollars.")
 @work.command(name='apply')
 async def work_apply(ctx,job):
+  print("Before Create Account")
   create_account(ctx.author.id)
+  print("After Create Account")
   try:
+    print("Before Work Apply")    
     economy.applyjob(economy.getAccount(ctx.author.id),job)
-    em = discord.Embed(title=f"{ctx.author.name} has successfully applied for a job!", description=f"{ctx.author.mention} You now work as a {job}!", color=0x275ef4)
+    print("After Work Apply")
+    em = discord.Embed(title=f"{ctx.author.name} has successfully applied for a job!", description=f"{ctx.author.mention} You now work as a {job}!", color=0x275ef4)    
     await ctx.send(embed=em)
-  except economy.EconomyError:
-    await ctx.send("What are you thinking that's not a job from the list (check the list by typing `;work list`)")
+  except Exception as e:
+    #await ctx.send("What are you thinking that's not a job from the list (check the list by typing `;work list`)")
+    print(type(e))
+    print(e)
 @work.command(name='list')
 async def work_list(ctx):
   em=discord.Embed(title="Job list",description="A list of job you can apply to", color=0x275ef4)
   for job in bot_data.jobs:
-    em.add_field(name=job,value=f"Money per work: "+str(bot_data.job_data[job]),inline=False)
+    em.add_field(name=job,value="Money per work: "+str(bot_data.job_data[job]),inline=False)
 
     em = discord.Embed(title=f"{ctx.author.name}'s Profile", description=f"{ctx.author.mention}'s Game Stats:", color=0x275ef4)
     with open("economy.json") as f:
@@ -358,13 +331,63 @@ async def work_list(ctx):
     em.add_field(name="Job", value=bank[str(ctx.author.id)]['job'])
     em.set_thumbnail(url=ctx.author.avatar_url)
     await ctx.send(embed=em)
-@client.command()
-async def applyjob(ctx,job):
-  e=economy.getAccount(ctx.author.id)
-  e.applyjob(job)
-  em = discord.Embed(title=f"{ctx.author.name} has successfully applied for a job!", description=f"{ctx.author.mention} You now work as a {job}!", color=0x275ef4)
 
-  await ctx.send(embed=em)
+@client.command()
+async def stockprice(ctx,symbol):
+  try:
+    em = discord.Embed(title=f"{symbol.upper()}'s stock price", description=str(get_stock_price(symbol)), color=0x275ef4)
+    await ctx.send(embed=em)
+  except:
+    await ctx.send("Listen up that's not a valid stock symbol")
+@help.command(name='stockprice')
+async def help_stockprice(ctx):
+    cmd = HelpCommand(
+        "Help on `stockprice`",
+        "Gets the stock price of a specified stock. Uses Yahoo finance.",
+        "`;stockprice <stock symbol>`", "None")
+    await ctx.send(embed=cmd.em)
+@stockprice.error
+async def stockprice_error(ctx, error):
+  if isinstance(error, commands.MissingRequiredArgument):
+    await ctx.send("You better specify a stock symbol to get the stock price. Like this: `;stockprice <stock symbol>`")
+
+@client.command()
+async def serverinfo(ctx):
+    print("ctx.guild.members")
+    print(len(ctx.guild.members))
+    print("ctx.guild.roles")
+    print(ctx.guild.roles[0].name)
+    print("ctx.guild.textchannels")
+    print(ctx.guild.text_channels[0].name)
+    print("ctx.guild.voicechannels")
+    print(ctx.guild.voice_channels[0].name)
+    members=""
+    for member in ctx.guild.members:
+      members=members+" - "+member.name+"\n"
+    roles=""
+    for role in ctx.guild.roles:
+      roles=roles+" - "+role.name+"\n"
+    em = discord.Embed(title="Info for this server",description="", color=0x275ef4)
+    em.add_field(name="Server Name",value=ctx.guild.name,inline=False)
+    em.add_field(name="Server ID",value=ctx.guild.id,inline=False)
+    em.add_field(name="Server Icon",value=ctx.guild.icon,inline=False)
+    voiceguildchannels=""
+    textguildchannels=""
+    for voice_channel in ctx.guild.voice_channels:
+      voiceguildchannels=voiceguildchannels+" - "+voice_channel.name+"\n"
+    for text_channel in ctx.guild.text_channels:
+      textguildchannels=textguildchannels+" - "+text_channel.name+"\n"
+    em.add_field(name="Server Text Channels",value=textguildchannels,inline=False)
+    em.add_field(name="Server Voice Channels",value=voiceguildchannels,inline=False)
+    em.add_field(name="Server Members",value=members,inline=False)
+    em.add_field(name="Server Roles",value=roles,inline=False)
+    em.add_field(name="Server Owner",value=ctx.guild.owner.name,inline=False)    
+    await ctx.send(embed=em)
+@client.command(aliases=['doggo'])
+async def dog(ctx):
+  doggo=json.loads(requests.get('https://dog.ceo/api/breeds/image/random').text)['message']
+  print("Doggo: "+doggo)
+  await ctx.send(doggo)
 keep_alive()
 # Run The Bot
 client.run(os.getenv("DISCORD_BOT_SECRET"))
